@@ -1,69 +1,65 @@
-const express = require("express");
-const multer = require("multer");
-const path = require("path");
-const fs = require("fs");
-const imageToPdf = require("image-to-pdf");
-const cors = require("cors");
-const { v4: uuidv4 } = require("uuid");
+const express = require('express');
+const multer = require('multer');
+const fs = require('fs');
+const path = require('path');
+const { exec } = require('child_process');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(cors());
+const uploadDir = path.join(__dirname, 'uploads');
+const outputDir = path.join(__dirname, 'converted');
 
-const uploadDir = path.join(__dirname, "uploads");
-const outputDir = path.join(__dirname, "converted");
-
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
-if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir);
-
-// Fayl yuklash sozlamalari
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, uploadDir),
-  filename: (req, file, cb) => cb(null, uuidv4() + path.extname(file.originalname))
+[uploadDir, outputDir].forEach(dir => {
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir);
 });
 
-const fileFilter = (req, file, cb) => {
-  const ext = path.extname(file.originalname).toLowerCase();
-  if ([".jpg", ".jpeg", ".png"].includes(ext)) cb(null, true);
-  else cb(new Error("Faqat JPG yoki PNG ruxsat etiladi"), false);
-};
-
-const upload = multer({ storage, fileFilter });
-
-// POST /convert
-app.post("/convert", upload.array("files"), async (req, res) => {
-  const files = req.files;
-  if (!files || files.length === 0) {
-    return res.status(400).json({ error: "Fayl yuborilmadi." });
+const storage = multer.diskStorage({
+  destination: uploadDir,
+  filename: (req, file, cb) => {
+    cb(null, Date.now() + '-' + file.originalname);
   }
+});
+const upload = multer({ storage });
 
-  const outputFilePath = path.join(outputDir, `${uuidv4()}.pdf`);
-  const imagePaths = files.map(f => f.path);
+app.use(express.static('public'));
 
-  try {
-    const output = fs.createWriteStream(outputFilePath);
-    imageToPdf(imagePaths, 'A4').pipe(output);
+app.post('/convert', upload.single('file'), (req, res) => {
+  const inputPath = req.file.path;
+  const ext = path.extname(req.file.originalname).toLowerCase();
+  const outputFile = path.join(outputDir, `${Date.now()}.pdf`);
 
-    output.on("finish", () => {
-      res.download(outputFilePath, () => {
-        // vaqtincha fayllarni o'chirish (ixtiyoriy)
-        imagePaths.forEach(p => fs.unlinkSync(p));
-        fs.unlinkSync(outputFilePath);
+  const cleanup = () => fs.existsSync(inputPath) && fs.unlinkSync(inputPath);
+
+  const sendPDF = () => {
+    res.download(outputFile, 'converted.pdf', () => {
+      cleanup();
+      fs.unlinkSync(outputFile);
+    });
+  };
+
+  if (['.jpg', '.jpeg', '.png', '.bmp', '.tiff'].includes(ext)) {
+    // ImageMagick required
+    exec(`convert "${inputPath}" "${outputFile}"`, (err) => {
+      if (err) return res.status(500).send('Image PDFga o‘girilmadi');
+      sendPDF();
+    });
+  } else if (['.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx'].includes(ext)) {
+    // LibreOffice is required
+    exec(`libreoffice --headless --convert-to pdf "${inputPath}" --outdir "${outputDir}"`, (err) => {
+      if (err) return res.status(500).send('Faylni PDFga o‘tkazib bo‘lmadi');
+      const converted = inputPath.replace(uploadDir, outputDir).replace(ext, '.pdf');
+      res.download(converted, 'converted.pdf', () => {
+        cleanup();
+        fs.unlinkSync(converted);
       });
     });
-
-    output.on("error", (err) => {
-      res.status(500).json({ error: "PDF yaratishda xatolik." });
-    });
-
-  } catch (err) {
-    res.status(500).json({ error: "Server xatoligi." });
+  } else {
+    cleanup();
+    return res.status(400).send('Fayl turi qo‘llab-quvvatlanmaydi');
   }
 });
 
-// Run server
 app.listen(PORT, () => {
   console.log(`✅ Server ishga tushdi: http://localhost:${PORT}`);
 });
-
