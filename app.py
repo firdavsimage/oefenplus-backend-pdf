@@ -1,96 +1,34 @@
+from flask import Flask, request, jsonify, send_from_directory
+from flask_cors import CORS
 import os
-from docx import Document
-from pptx import Presentation
-from openpyxl import load_workbook
-from reportlab.pdfgen import canvas
-from reportlab.lib.pagesizes import A4
-from PIL import Image
+from converter.file_to_pdf import convert_file
 
-def convert_file(filepath, output_folder):
-    ext = os.path.splitext(filepath)[1].lower()
-    if ext == '.docx':
-        return convert_docx(filepath, output_folder)
-    elif ext == '.pptx':
-        return convert_pptx(filepath, output_folder)
-    elif ext == '.xlsx':
-        return convert_xlsx(filepath, output_folder)
-    elif ext in ['.jpg', '.jpeg', '.png']:
-        return convert_images([filepath], output_folder)
-    else:
-        return None, None
+app = Flask(__name__)
+CORS(app)
 
-def convert_docx(file_path, output_folder):
-    doc = Document(file_path)
-    output_pdf = os.path.join(output_folder, os.path.splitext(os.path.basename(file_path))[0] + ".pdf")
-    c = canvas.Canvas(output_pdf, pagesize=A4)
-    width, height = A4
-    y = height - 50
+UPLOAD_FOLDER = 'uploads'
+CONVERTED_FOLDER = 'converted'
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(CONVERTED_FOLDER, exist_ok=True)
 
-    for para in doc.paragraphs:
-        text = para.text.strip()
-        if text:
-            c.drawString(50, y, text)
-            y -= 20
-            if y < 50:
-                c.showPage()
-                y = height - 50
+@app.route('/api/convert', methods=['POST'])
+def convert():
+    if 'file' not in request.files:
+        return jsonify({'error': 'Fayl yuborilmadi'}), 400
 
-    c.save()
-    return output_pdf, os.path.basename(output_pdf)
+    file = request.files['file']
+    saved_path = os.path.join(UPLOAD_FOLDER, file.filename)
+    file.save(saved_path)
 
-def convert_pptx(file_path, output_folder):
-    prs = Presentation(file_path)
-    output_pdf = os.path.join(output_folder, os.path.splitext(os.path.basename(file_path))[0] + ".pdf")
-    c = canvas.Canvas(output_pdf, pagesize=A4)
-    width, height = A4
+    output_path, filename = convert_file(saved_path, CONVERTED_FOLDER)
+    if not output_path:
+        return jsonify({'error': 'Faylni konvertatsiya qilishda xatolik'}), 500
 
-    for slide in prs.slides:
-        y = height - 50
-        for shape in slide.shapes:
-            if hasattr(shape, "text"):
-                lines = shape.text.split('\n')
-                for line in lines:
-                    c.drawString(50, y, line.strip())
-                    y -= 20
-                    if y < 50:
-                        c.showPage()
-                        y = height - 50
-        c.showPage()
+    return jsonify({'downloadUrl': f'/download/{filename}'})
 
-    c.save()
-    return output_pdf, os.path.basename(output_pdf)
+@app.route('/download/<filename>')
+def download_file(filename):
+    return send_from_directory(CONVERTED_FOLDER, filename, as_attachment=True)
 
-def convert_xlsx(file_path, output_folder):
-    wb = load_workbook(file_path)
-    output_pdf = os.path.join(output_folder, os.path.splitext(os.path.basename(file_path))[0] + ".pdf")
-    c = canvas.Canvas(output_pdf, pagesize=A4)
-    width, height = A4
-    y = height - 50
-
-    for sheet in wb.worksheets:
-        for row in sheet.iter_rows(values_only=True):
-            line = ' | '.join([str(cell) if cell is not None else '' for cell in row])
-            c.drawString(50, y, line)
-            y -= 20
-            if y < 50:
-                c.showPage()
-                y = height - 50
-        c.showPage()
-
-    c.save()
-    return output_pdf, os.path.basename(output_pdf)
-
-def convert_images(image_paths, output_folder):
-    output_pdf = os.path.join(output_folder, "converted_images.pdf")
-    image_list = []
-
-    for img_path in image_paths:
-        img = Image.open(img_path)
-        img = img.convert("RGB")
-        image_list.append(img)
-
-    if image_list:
-        image_list[0].save(output_pdf, save_all=True, append_images=image_list[1:], resolution=300)
-        return output_pdf, os.path.basename(output_pdf)
-
-    return None, None
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=10000)
