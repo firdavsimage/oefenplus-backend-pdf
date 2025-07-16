@@ -3,6 +3,7 @@ flask-cors
 python-docx
 python-pptx
 openpyxl
+pandas
 reportlab
 Pillow
 comtypes; sys_platform == 'win32'
