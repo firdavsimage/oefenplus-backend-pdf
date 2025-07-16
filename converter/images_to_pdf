@@ -1,28 +1,17 @@
-@app.route('/api/convert-images', methods=['POST'])
-def convert_images_to_pdf():
-    if 'files' not in request.files:
-        return jsonify({'error': 'Fayllar yuborilmadi'}), 400
+from PIL import Image
+import os
 
-    files = request.files.getlist('files')
-    images = []
+def convert_image_to_pdf(input_dir, output_path):
+    image_files = sorted([
+        f for f in os.listdir(input_dir)
+        if f.lower().endswith(('.png', '.jpg', '.jpeg'))
+    ])
 
-    # A4 o‘lchami (inch): 8.27 × 11.69, DPI 300 => pixel: 2480 x 3508
-    a4_width, a4_height = 2480, 3508
+    image_list = []
+    for filename in image_files:
+        path = os.path.join(input_dir, filename)
+        img = Image.open(path).convert('RGB')
+        image_list.append(img)
 
-    for file in files:
-        img = Image.open(file.stream).convert('RGB')
-
-        # Rasmni A4 o‘lchamga moslashtiramiz
-        img_resized = img.resize((a4_width, a4_height))
-        images.append(img_resized)
-
-    if not images:
-        return jsonify({'error': 'Rasmlar topilmadi'}), 400
-
-    output_filename = f"{uuid.uuid4().hex}.pdf"
-    output_path = os.path.join(OUTPUT_FOLDER, output_filename)
-
-    # PDFga saqlaymiz, DPI 300 bo‘yicha
-    images[0].save(output_path, save_all=True, append_images=images[1:], resolution=300)
-
-    return jsonify({'downloadUrl': f'/download/{output_filename}'})
+    if image_list:
+        image_list[0].save(output_path, save_all=True, append_images=image_list[1:], resolution=300.0)
