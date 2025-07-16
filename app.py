@@ -1,8 +1,7 @@
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
-from PIL import Image
-import os, uuid
-from converter import convert_docx, convert_pptx, convert_xlsx
+import os
+from file_to_pdf import convert_file
 
 app = Flask(__name__)
 CORS(app)
@@ -13,31 +12,20 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
 @app.route('/api/convert-file', methods=['POST'])
-def convert_file_to_pdf():
+def convert_to_pdf():
     if 'file' not in request.files:
-        return jsonify({'error': 'Fayl yuborilmadi'}), 400
+        return jsonify({'error': 'Fayl topilmadi'}), 400
 
     file = request.files['file']
-    filename = file.filename
-    ext = filename.rsplit('.', 1)[-1].lower()
-
-    input_path = os.path.join(UPLOAD_FOLDER, filename)
+    input_path = os.path.join(UPLOAD_FOLDER, file.filename)
     file.save(input_path)
 
     try:
-        if ext == 'docx':
-            output_path = convert_docx(input_path, OUTPUT_FOLDER)
-        elif ext == 'pptx':
-            output_path = convert_pptx(input_path, OUTPUT_FOLDER)
-        elif ext == 'xlsx':
-            output_path = convert_xlsx(input_path, OUTPUT_FOLDER)
-        else:
-            return jsonify({'error': 'Fayl turi qo‘llab-quvvatlanmaydi'}), 400
+        output_path = convert_file(input_path, OUTPUT_FOLDER)
     except Exception as e:
         return jsonify({'error': f'Xatolik: {str(e)}'}), 500
 
-    filename_out = os.path.basename(output_path)
-    return jsonify({'downloadUrl': f'/download/{filename_out}'})
+    return jsonify({'downloadUrl': f'/download/{os.path.basename(output_path)}'})
 
 @app.route('/download/<filename>')
 def download_file(filename):
