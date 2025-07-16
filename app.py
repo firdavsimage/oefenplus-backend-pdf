@@ -1,34 +1,63 @@
-from flask import Flask, request, jsonify, send_from_directory
-from flask_cors import CORS
+# app.py
 import os
-from converter.file_to_pdf import convert_file
-
-app = Flask(__name__)
-CORS(app)
+import shutil
+from flask import Flask, request, send_file, jsonify
+from werkzeug.utils import secure_filename
+from converter.image_converter import convert_image_to_pdf
+from converter.docx_converter import convert_docx_to_pdf
+from converter.pptx_converter import convert_pptx_to_pdf
+from converter.excel_converter import convert_excel_to_pdf
 
 UPLOAD_FOLDER = 'uploads'
-CONVERTED_FOLDER = 'converted'
+OUTPUT_FOLDER = 'output'
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'docx', 'pptx', 'xlsx'}
+
+app = Flask(__name__)
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+app.config['OUTPUT_FOLDER'] = OUTPUT_FOLDER
+
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-os.makedirs(CONVERTED_FOLDER, exist_ok=True)
+os.makedirs(OUTPUT_FOLDER, exist_ok=True)
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 @app.route('/api/convert', methods=['POST'])
-def convert():
+def convert_file():
     if 'file' not in request.files:
-        return jsonify({'error': 'Fayl yuborilmadi'}), 400
-
+        return jsonify({'error': 'No file part'}), 400
     file = request.files['file']
-    saved_path = os.path.join(UPLOAD_FOLDER, file.filename)
-    file.save(saved_path)
+    if file.filename == '':
+        return jsonify({'error': 'No selected file'}), 400
+    if file and allowed_file(file.filename):
+        filename = secure_filename(file.filename)
+        input_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(input_path)
 
-    output_path, filename = convert_file(saved_path, CONVERTED_FOLDER)
-    if not output_path:
-        return jsonify({'error': 'Faylni konvertatsiya qilishda xatolik'}), 500
+        ext = filename.rsplit('.', 1)[1].lower()
+        output_filename = filename.rsplit('.', 1)[0] + '.pdf'
+        output_path = os.path.join(app.config['OUTPUT_FOLDER'], output_filename)
 
-    return jsonify({'downloadUrl': f'/download/{filename}'})
+        try:
+            if ext in ['jpg', 'jpeg', 'png']:
+                convert_image_to_pdf(input_path, output_path)
+            elif ext == 'docx':
+                convert_docx_to_pdf(input_path, output_path)
+            elif ext == 'pptx':
+                convert_pptx_to_pdf(input_path, output_path)
+            elif ext == 'xlsx':
+                convert_excel_to_pdf(input_path, output_path)
+            else:
+                return jsonify({'error': 'Unsupported file format'}), 400
 
-@app.route('/download/<filename>')
-def download_file(filename):
-    return send_from_directory(CONVERTED_FOLDER, filename, as_attachment=True)
+            return send_file(output_path, as_attachment=True)
+        finally:
+            shutil.rmtree(UPLOAD_FOLDER)
+            shutil.rmtree(OUTPUT_FOLDER)
+            os.makedirs(UPLOAD_FOLDER)
+            os.makedirs(OUTPUT_FOLDER)
+    else:
+        return jsonify({'error': 'Invalid file'}), 400
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=10000)
+    app.run(debug=True)
