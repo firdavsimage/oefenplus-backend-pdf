@@ -1,17 +1,6 @@
 from PIL import Image
-import os
 
-def convert_image_to_pdf(input_dir, output_path):
-    image_files = sorted([
-        f for f in os.listdir(input_dir)
-        if f.lower().endswith(('.png', '.jpg', '.jpeg'))
-    ])
-
-    image_list = []
-    for filename in image_files:
-        path = os.path.join(input_dir, filename)
-        img = Image.open(path).convert('RGB')
-        image_list.append(img)
-
-    if image_list:
-        image_list[0].save(output_path, save_all=True, append_images=image_list[1:], resolution=300.0)
+def convert_image_to_pdf(input_path, output_path):
+    image = Image.open(input_path)
+    rgb_image = image.convert('RGB')
+    rgb_image.save(output_path, 'PDF', resolution=300.0)
