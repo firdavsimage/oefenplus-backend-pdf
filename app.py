@@ -1,8 +1,7 @@
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
-import os
 from PIL import Image
-import uuid
+import os, uuid
 
 app = Flask(__name__)
 CORS(app)
@@ -21,15 +20,17 @@ def convert_images_to_pdf():
     images = []
 
     for file in files:
-        image = Image.open(file.stream).convert('RGB')
-        images.append(image)
+        img = Image.open(file.stream).convert('RGB')
+        images.append(img)
 
     if not images:
         return jsonify({'error': 'Rasmlar topilmadi'}), 400
 
     output_filename = f"{uuid.uuid4().hex}.pdf"
     output_path = os.path.join(OUTPUT_FOLDER, output_filename)
-    images[0].save(output_path, save_all=True, append_images=images[1:])
+
+    # ✅ 300 DPI bilan PDFga saqlash, rasm kesilmaydi, sifat yuqori
+    images[0].save(output_path, save_all=True, append_images=images[1:], resolution=300)
 
     return jsonify({'downloadUrl': f'/download/{output_filename}'})
 
@@ -38,4 +39,4 @@ def download_file(filename):
     return send_from_directory(OUTPUT_FOLDER, filename, as_attachment=True)
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(host='0.0.0.0', port=10000)
