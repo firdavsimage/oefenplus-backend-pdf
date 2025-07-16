@@ -5,5 +5,6 @@ python-pptx
 openpyxl
 reportlab
 Pillow
+PyPDF2
 comtypes; sys_platform == 'win32'
 gunicorn
