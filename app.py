@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 import os
-from file_to_pdf import convert_file
+from converter.file_to_pdf import convert_file
 
 app = Flask(__name__)
 CORS(app)
