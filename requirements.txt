@@ -6,3 +6,4 @@ openpyxl
 reportlab
 Pillow
 comtypes; sys_platform == 'win32'
+gunicorn
