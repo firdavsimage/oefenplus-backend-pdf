@@ -1,6 +1,0 @@
-from PIL import Image
-
-def convert_image_to_pdf(input_path, output_path):
-    image = Image.open(input_path)
-    rgb_image = image.convert('RGB')
-    rgb_image.save(output_path, 'PDF', resolution=300.0)
