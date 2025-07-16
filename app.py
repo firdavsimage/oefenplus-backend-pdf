@@ -1,4 +1,3 @@
-# app.py
 import os
 import shutil
 from flask import Flask, request, send_file, jsonify
@@ -26,13 +25,13 @@ def allowed_file(filename):
 def convert_file():
     if 'file' not in request.files:
         return jsonify({'error': 'No file part'}), 400
-    
+
     files = request.files.getlist('file')
-    if not files or files[0].filename == '':
+
+    if not files:
         return jsonify({'error': 'No selected file'}), 400
 
-    ext = files[0].filename.rsplit('.', 1)[1].lower()
-    output_filename = 'converted.pdf'
+    output_filename = "converted.pdf"
     output_path = os.path.join(app.config['OUTPUT_FOLDER'], output_filename)
 
     try:
@@ -41,19 +40,21 @@ def convert_file():
                 filename = secure_filename(file.filename)
                 input_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
                 file.save(input_path)
+
+                ext = filename.rsplit('.', 1)[1].lower()
+
+                if ext in ['jpg', 'jpeg', 'png']:
+                    convert_image_to_pdf(input_path, output_path, append=True)
+                elif ext == 'docx':
+                    convert_docx_to_pdf(input_path, output_path)
+                elif ext == 'pptx':
+                    convert_pptx_to_pdf(input_path, output_path)
+                elif ext == 'xlsx':
+                    convert_excel_to_pdf(input_path, output_path)
+                else:
+                    return jsonify({'error': f'Unsupported file format: {ext}'}), 400
             else:
                 return jsonify({'error': 'Invalid file'}), 400
-
-        if ext in ['jpg', 'jpeg', 'png']:
-            convert_image_to_pdf(app.config['UPLOAD_FOLDER'], output_path)
-        elif ext == 'docx':
-            convert_docx_to_pdf(input_path, output_path)
-        elif ext == 'pptx':
-            convert_pptx_to_pdf(input_path, output_path)
-        elif ext == 'xlsx':
-            convert_excel_to_pdf(input_path, output_path)
-        else:
-            return jsonify({'error': 'Unsupported file format'}), 400
 
         return send_file(output_path, as_attachment=True)
     finally:
@@ -61,9 +62,6 @@ def convert_file():
         shutil.rmtree(OUTPUT_FOLDER)
         os.makedirs(UPLOAD_FOLDER)
         os.makedirs(OUTPUT_FOLDER)
-
-    else:
-        return jsonify({'error': 'Invalid file'}), 400
 
 if __name__ == '__main__':
     app.run(debug=True)
