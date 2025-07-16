@@ -1,75 +1,43 @@
-import os
-from docx import Document
-from pptx import Presentation
-from openpyxl import load_workbook
-from reportlab.pdfgen import canvas
 from PIL import Image
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import A4
+import os
 
-def convert_docx_to_pdf(input_path, output_path):
-    doc = Document(input_path)
-    temp_txt = input_path + ".txt"
-    with open(temp_txt, "w", encoding="utf-8") as f:
-        for para in doc.paragraphs:
-            f.write(para.text + "\n")
-    text_to_pdf(temp_txt, output_path)
-    os.remove(temp_txt)
-
-def convert_pptx_to_pdf(input_path, output_path):
-    pres = Presentation(input_path)
-    temp_txt = input_path + ".txt"
-    with open(temp_txt, "w", encoding="utf-8") as f:
-        for slide in pres.slides:
-            for shape in slide.shapes:
-                if shape.has_text_frame:
-                    f.write(shape.text + "\n")
-    text_to_pdf(temp_txt, output_path)
-    os.remove(temp_txt)
-
-def convert_xlsx_to_pdf(input_path, output_path):
-    wb = load_workbook(input_path)
-    temp_txt = input_path + ".txt"
-    with open(temp_txt, "w", encoding="utf-8") as f:
-        for sheet in wb.worksheets:
-            for row in sheet.iter_rows():
-                row_data = [str(cell.value or "") for cell in row]
-                f.write("\t".join(row_data) + "\n")
-    text_to_pdf(temp_txt, output_path)
-    os.remove(temp_txt)
-
-def image_to_pdf(input_path, output_path):
-    image = Image.open(input_path)
-    image.convert("RGB").save(output_path)
-
-def text_to_pdf(txt_path, pdf_path):
-    c = canvas.Canvas(pdf_path)
-    with open(txt_path, "r", encoding="utf-8") as f:
-        y = 800
-        for line in f:
-            c.drawString(50, y, line.strip())
-            y -= 15
-            if y < 50:
-                c.showPage()
-                y = 800
-    c.save()
-
-def convert_file(input_path, output_folder):
-    ext = os.path.splitext(input_path)[1].lower()
-    base = os.path.basename(input_path)
-    filename = os.path.splitext(base)[0] + ".pdf"
-    output_path = os.path.join(output_folder, filename)
-
+def convert_files(image_paths, output_path):
     try:
-        if ext == ".docx":
-            convert_docx_to_pdf(input_path, output_path)
-        elif ext == ".pptx":
-            convert_pptx_to_pdf(input_path, output_path)
-        elif ext == ".xlsx":
-            convert_xlsx_to_pdf(input_path, output_path)
-        elif ext in [".jpg", ".jpeg", ".png"]:
-            image_to_pdf(input_path, output_path)
-        else:
-            return None, None
-        return output_path, filename
+        a4_width, a4_height = A4
+        c = canvas.Canvas(output_path, pagesize=A4)
+
+        for path in image_paths:
+            img = Image.open(path)
+            img = img.convert('RGB')
+
+            # DPI 300 va A4 o'lchamiga moslashtirish
+            img_width, img_height = img.size
+            aspect = img_width / img_height
+            page_aspect = a4_width / a4_height
+
+            if aspect > page_aspect:
+                # Rasm eniga qarab moslashtirish
+                new_width = a4_width
+                new_height = a4_width / aspect
+            else:
+                # Rasm bo'yiga qarab moslashtirish
+                new_height = a4_height
+                new_width = a4_height * aspect
+
+            x = (a4_width - new_width) / 2
+            y = (a4_height - new_height) / 2
+
+            temp_img_path = path + "_resized.jpg"
+            img.save(temp_img_path, dpi=(300, 300))
+
+            c.drawImage(temp_img_path, x, y, width=new_width, height=new_height)
+            os.remove(temp_img_path)
+            c.showPage()
+
+        c.save()
+        return True
     except Exception as e:
-        print(f"[XATO] Konvertatsiyada xato: {e}")
-        return None, None
+        print(f"[XATO] {e}")
+        return False
