@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from PIL import Image
 import os, uuid
+from converter import convert_docx, convert_pptx, convert_xlsx
 
 app = Flask(__name__)
 CORS(app)
@@ -11,28 +12,32 @@ OUTPUT_FOLDER = 'output'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
-@app.route('/api/convert-images', methods=['POST'])
-def convert_images_to_pdf():
-    if 'files' not in request.files:
-        return jsonify({'error': 'Fayllar yuborilmadi'}), 400
+@app.route('/api/convert-file', methods=['POST'])
+def convert_file_to_pdf():
+    if 'file' not in request.files:
+        return jsonify({'error': 'Fayl yuborilmadi'}), 400
 
-    files = request.files.getlist('files')
-    images = []
+    file = request.files['file']
+    filename = file.filename
+    ext = filename.rsplit('.', 1)[-1].lower()
 
-    for file in files:
-        img = Image.open(file.stream).convert('RGB')
-        images.append(img)
+    input_path = os.path.join(UPLOAD_FOLDER, filename)
+    file.save(input_path)
 
-    if not images:
-        return jsonify({'error': 'Rasmlar topilmadi'}), 400
+    try:
+        if ext == 'docx':
+            output_path = convert_docx(input_path, OUTPUT_FOLDER)
+        elif ext == 'pptx':
+            output_path = convert_pptx(input_path, OUTPUT_FOLDER)
+        elif ext == 'xlsx':
+            output_path = convert_xlsx(input_path, OUTPUT_FOLDER)
+        else:
+            return jsonify({'error': 'Fayl turi qo‘llab-quvvatlanmaydi'}), 400
+    except Exception as e:
+        return jsonify({'error': f'Xatolik: {str(e)}'}), 500
 
-    output_filename = f"{uuid.uuid4().hex}.pdf"
-    output_path = os.path.join(OUTPUT_FOLDER, output_filename)
-
-    # ✅ 300 DPI bilan PDFga saqlash, rasm kesilmaydi, sifat yuqori
-    images[0].save(output_path, save_all=True, append_images=images[1:], resolution=300)
-
-    return jsonify({'downloadUrl': f'/download/{output_filename}'})
+    filename_out = os.path.basename(output_path)
+    return jsonify({'downloadUrl': f'/download/{filename_out}'})
 
 @app.route('/download/<filename>')
 def download_file(filename):
