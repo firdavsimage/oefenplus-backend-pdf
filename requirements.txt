@@ -1,7 +1,9 @@
-Flask
-Pillow
+flask
+flask-cors
 python-docx
 python-pptx
 openpyxl
 reportlab
+Pillow
+comtypes; sys_platform == 'win32'
 gunicorn
