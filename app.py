@@ -5,7 +5,7 @@ import uuid
 import shutil
 
 app = Flask(__name__)
-PUBLIC_KEY = "YOUR_PUBLIC_KEY_HERE"  # ILovePDF API public key
+PUBLIC_KEY = "secret_key_585ab4d86b672f4a7cf317577eeed234_o1iAu2ae4130c0faea3f83fb367acc19c247d"  # ILovePDF API public key
 
 # Ruxsat berilgan fayl turlari
 IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png'}
