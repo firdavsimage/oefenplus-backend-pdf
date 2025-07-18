@@ -6,6 +6,7 @@ from ilovepdf import ILovePdf
 app = Flask(__name__)
 CORS(app)
 
+# API kalitlaringiz
 PUBLIC_KEY = "project_public_002668c65677139b50439696e90805e5_JO_Lt06e53e5275b342ceea0429acfc79f0d2"
 SECRET_KEY = "secret_key_cb327f74110b4e506fec5ac629878293_SkxGg3f96e8bcdd9594d8e575c15d3dab7b99"
 
@@ -32,7 +33,7 @@ def convert_to_pdf():
         elif all(ext in ['.docx', '.doc', '.pptx', '.ppt', '.xlsx', '.xls'] for ext in file_exts):
             task = ilovepdf.new_task('officepdf')
         else:
-            return jsonify({'error': 'Faqat rasmlar yoki Office fayllar yuborilishi mumkin'}), 400
+            return jsonify({'error': 'Faqat rasm yoki Office fayllar yuborilishi mumkin'}), 400
 
         for file in files:
             filepath = os.path.join(UPLOAD_FOLDER, file.filename)
