@@ -3,11 +3,15 @@ from flask_cors import CORS
 import requests
 import os
 from tempfile import NamedTemporaryFile
+from dotenv import load_dotenv
+
+# .env fayldan API kalitni yuklaymiz
+load_dotenv()
 
 app = Flask(__name__)
-CORS(app)  # CORS yoqildi — barcha domenlarga ruxsat
+CORS(app)
 
-ILOVEPDF_SECRET = "secret_key_585ab4d86b672f4a7cf317577eeed234_o1iAu2ae4130c0faea3f83fb367acc19c247d"
+ILOVEPDF_SECRET = os.getenv("ILOVEPDF_SECRET")
 
 @app.route("/convert", methods=["POST"])
 def convert():
