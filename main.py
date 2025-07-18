@@ -1,119 +1,66 @@
+from flask import Flask, request, send_file
+import requests, time, os
+
+app = Flask(__name__)
+
+API_KEY = "secret_key_585ab4d86b672f4a7cf317577eeed234_o1iAu2ae4130c0faea3f83fb367acc19c247d"
+
 @app.route("/convert", methods=["POST"])
 def convert_to_pdf():
-    try:
-        if 'files' in request.files:
-            files = request.files.getlist("files")
-            valid_images = []
-            hash_input = b""
+    files = request.files.getlist("files")
+    if not files:
+        return {"error": "Hech qanday fayl yuborilmadi"}, 400
 
-            for file in files:
-                filename = secure_filename(file.filename)
-                ext = filename.rsplit('.', 1)[-1].lower()
-                if ext in ['jpg', 'jpeg', 'png']:
-                    uid = uuid.uuid4().hex
-                    filepath = os.path.join(UPLOAD_FOLDER, f"{uid}_{filename}")
-                    file.save(filepath)
-                    valid_images.append(filepath)
-                    hash_input += open(filepath, "rb").read()
+    # 1. Start task
+    tool_type = detect_tool(files[0].filename)
+    start_res = requests.post(
+        f"https://api.ilovepdf.com/v1/start/{tool_type}",
+        headers={"Authorization": f"Bearer {API_KEY}"}
+    ).json()
+    task = start_res["task"]
 
-            if not valid_images:
-                return jsonify({"error": "Rasmlar topilmadi yoki noto‘g‘ri format"}), 400
+    # 2. Upload files
+    uploaded = []
+    for file in files:
+        local_path = f"/tmp/{file.filename}"
+        file.save(local_path)
+        with open(local_path, "rb") as f:
+            upload_res = requests.post(
+                "https://api.ilovepdf.com/v1/upload",
+                params={"task": task},
+                files={"file": (file.filename, f)}
+            ).json()
+            uploaded.append(upload_res)
 
-            hashname = hashlib.md5(hash_input).hexdigest()
-            cached_pdf = os.path.join(CACHE_FOLDER, f"{hashname}.pdf")
-            if os.path.exists(cached_pdf):
-                return send_file(cached_pdf, as_attachment=True)
+    # 3. Process
+    process_res = requests.post(
+        "https://api.ilovepdf.com/v1/process",
+        data={"task": task}
+    ).json()
 
-            # ILovePDF task yaratish
-            res = requests.post("https://api.ilovepdf.com/v1/start/imagepdf", json={
-                "public_key": ILOVEPDF_SECRET
-            })
-            if res.status_code != 200:
-                return jsonify({"error": "iLovePDF task yaratib bo‘lmadi"}), 500
+    # 4. Download result
+    download = requests.get(
+        "https://api.ilovepdf.com/v1/download",
+        params={"task": task},
+        stream=True
+    )
 
-            task = res.json()
-            server, task_id = task["server"], task["task"]
+    output = f"/tmp/result_{int(time.time())}.pdf"
+    with open(output, "wb") as f:
+        for chunk in download.iter_content(chunk_size=8192):
+            f.write(chunk)
 
-            # Fayllarni yuklash
-            for path in valid_images:
-                with open(path, "rb") as f:
-                    upload_res = requests.post(f"https://{server}/v1/upload", files={
-                        'file': (os.path.basename(path), f)
-                    }, data={'task': task_id})
-                    if upload_res.status_code != 200:
-                        return jsonify({"error": "Yuklashda xatolik"}), 500
+    return send_file(output, as_attachment=True, download_name="converted.pdf", mimetype="application/pdf")
 
-            # Konvertatsiya qilish
-            proc_res = requests.post(f"https://{server}/v1/process", data={"task": task_id})
-            if proc_res.status_code != 200:
-                return jsonify({"error": "Konvertatsiya xatoligi"}), 500
+def detect_tool(filename):
+    ext = filename.lower().split('.')[-1]
+    if ext in ["jpg", "jpeg", "png"]:
+        return "imagepdf"
+    if ext in ["doc", "docx"]:
+        return "officepdf"
+    if ext in ["ppt", "pptx"]:
+        return "officepdf"
+    return "imagepdf"  # fallback
 
-            # Yuklab olish
-            output = requests.get(f"https://{server}/v1/download/{task_id}", stream=True)
-            if output.status_code != 200:
-                return jsonify({"error": "Yuklab olish xatoligi"}), 500
-
-            with open(cached_pdf, 'wb') as f:
-                for chunk in output.iter_content(1024):
-                    if chunk:
-                        f.write(chunk)
-
-            return send_file(cached_pdf, as_attachment=True)
-
-        # Bitta fayl
-        if 'file' not in request.files:
-            return jsonify({"error": "Fayl yuborilmadi"}), 400
-
-        file = request.files['file']
-        filename = secure_filename(file.filename)
-        ext = filename.rsplit('.', 1)[-1].lower()
-
-        if ext not in ['jpg', 'jpeg', 'png', 'docx', 'pptx']:
-            return jsonify({"error": "Yaroqsiz fayl turi"}), 400
-
-        uid = uuid.uuid4().hex
-        filepath = os.path.join(UPLOAD_FOLDER, f"{uid}_{filename}")
-        file.save(filepath)
-
-        hashname = file_hash(filepath)
-        cached_pdf = os.path.join(CACHE_FOLDER, f"{hashname}.pdf")
-        if os.path.exists(cached_pdf):
-            return send_file(cached_pdf, as_attachment=True)
-
-        # ILovePDF task yaratish
-        res = requests.post("https://api.ilovepdf.com/v1/start/convert", json={
-            "public_key": ILOVEPDF_SECRET,
-            "task": "officepdf" if ext in ["docx", "pptx"] else "imagepdf"
-        })
-        if res.status_code != 200:
-            return jsonify({"error": "iLovePDF task yaratilmadi"}), 500
-
-        task = res.json()
-        server, task_id = task["server"], task["task"]
-
-        with open(filepath, "rb") as f:
-            upload_res = requests.post(f"https://{server}/v1/upload", files={
-                'file': (filename, f)
-            }, data={'task': task_id})
-            if upload_res.status_code != 200:
-                return jsonify({"error": "Yuklashda xatolik"}), 500
-
-        proc_res = requests.post(f"https://{server}/v1/process", data={"task": task_id})
-        if proc_res.status_code != 200:
-            return jsonify({"error": "Konvertatsiya xatoligi"}), 500
-
-        output = requests.get(f"https://{server}/v1/download/{task_id}", stream=True)
-        if output.status_code != 200:
-            return jsonify({"error": "Yuklab olish xatoligi"}), 500
-
-        with open(cached_pdf, 'wb') as f:
-            for chunk in output.iter_content(1024):
-                if chunk:
-                    f.write(chunk)
-
-        return send_file(cached_pdf, as_attachment=True)
-
-    except Exception as e:
-        import traceback
-        print(traceback.format_exc())
-        return jsonify({"error": str(e)}), 500
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=10000)
