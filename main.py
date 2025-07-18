@@ -4,8 +4,11 @@ import os
 import hashlib
 import uuid
 import requests
+from flask_cors import CORS  # ✅ CORS import qilindi
 
 app = Flask(__name__)
+CORS(app, origins=["https://oefenplus.uz"])  # ✅ Faqat shu frontend domeniga ruxsat berildi
+
 UPLOAD_FOLDER = "uploads"
 CACHE_FOLDER = "cache"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
