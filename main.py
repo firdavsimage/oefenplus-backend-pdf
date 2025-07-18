@@ -22,6 +22,65 @@ def file_hash(filepath):
 
 @app.route("/convert", methods=["POST"])
 def convert_to_pdf():
+    # ✅ 1. Ko‘p rasmni tekshirish
+    if 'files' in request.files:
+        files = request.files.getlist("files")
+        valid_images = []
+        hash_input = b""
+        for file in files:
+            filename = secure_filename(file.filename)
+            ext = filename.rsplit('.', 1)[-1].lower()
+            if ext in ['jpg', 'jpeg', 'png']:
+                uid = uuid.uuid4().hex
+                filepath = os.path.join(UPLOAD_FOLDER, f"{uid}_{filename}")
+                file.save(filepath)
+                valid_images.append(filepath)
+                hash_input += open(filepath, "rb").read()
+
+        if not valid_images:
+            return jsonify({"error": "Rasmlar topilmadi yoki format noto‘g‘ri"}), 400
+
+        hashname = hashlib.md5(hash_input).hexdigest()
+        cached_pdf = os.path.join(CACHE_FOLDER, f"{hashname}.pdf")
+        if os.path.exists(cached_pdf):
+            return send_file(cached_pdf, as_attachment=True)
+
+        try:
+            # Task yaratish
+            res = requests.post("https://api.ilovepdf.com/v1/start/imagepdf", json={
+                "public_key": ILOVEPDF_SECRET
+            })
+            task = res.json()
+            server = task["server"]
+            task_id = task["task"]
+
+            # Barcha rasm fayllarini yuklash
+            for path in valid_images:
+                with open(path, "rb") as f:
+                    requests.post(f"https://{server}/v1/upload", files={
+                        'file': (os.path.basename(path), f)
+                    }, data={
+                        'task': task_id
+                    })
+
+            # Konvertatsiya qilish
+            requests.post(f"https://{server}/v1/process", data={
+                "task": task_id
+            })
+
+            # Yuklab olish
+            output = requests.get(f"https://{server}/v1/download/{task_id}", stream=True)
+            with open(cached_pdf, 'wb') as f:
+                for chunk in output.iter_content(chunk_size=1024):
+                    if chunk:
+                        f.write(chunk)
+
+            return send_file(cached_pdf, as_attachment=True)
+
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    # ✅ 2. Bitta fayl (oldingi kod) — o‘zgartirilmagan
     if 'file' not in request.files:
         return jsonify({"error": "Fayl yuborilmadi"}), 400
 
@@ -43,7 +102,6 @@ def convert_to_pdf():
 
     # API: iLovePDF
     try:
-        # 1. Task yaratish
         res = requests.post("https://api.ilovepdf.com/v1/start/convert", json={
             "public_key": ILOVEPDF_SECRET,
             "task": "officepdf" if ext in ["docx", "pptx"] else "imagepdf"
@@ -52,7 +110,6 @@ def convert_to_pdf():
         server = task["server"]
         task_id = task["task"]
 
-        # 2. Fayl yuklash
         with open(filepath, "rb") as f:
             requests.post(f"https://{server}/v1/upload", files={
                 'file': (filename, f)
@@ -60,12 +117,10 @@ def convert_to_pdf():
                 'task': task_id
             })
 
-        # 3. Konvertatsiya qilish
         requests.post(f"https://{server}/v1/process", data={
             "task": task_id
         })
 
-        # 4. Yuklab olish
         output = requests.get(f"https://{server}/v1/download/{task_id}", stream=True)
         with open(cached_pdf, 'wb') as f:
             for chunk in output.iter_content(chunk_size=1024):
