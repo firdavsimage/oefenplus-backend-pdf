@@ -1,5 +1,4 @@
 Flask
 flask-cors
-gunicorn
 i lovepdf
 gunicorn app:app --bind 0.0.0.0:$PORT
