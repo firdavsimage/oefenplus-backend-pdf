@@ -1,57 +1,33 @@
-from flask import Flask, request, render_template, jsonify
-import requests
+from flask import Flask, request, send_file, render_template
+import convertapi
 import os
+import uuid
+
+convertapi.api_secret = 'secret_key_585ab4d86b672f4a7cf317577eeed234_o1iAu2ae4130c0faea3f83fb367acc19c247d'
 
 app = Flask(__name__)
-SECRET = 'secret_key_585ab4d86b672f4a7cf317577eeed234_o1iAu2ae4130c0faea3f83fb367acc19c247d'
-
-def get_convert_endpoint(filename):
-    ext = filename.rsplit('.', 1)[-1].lower()
-    if ext in ['jpg', 'jpeg', 'png']:
-        return 'jpg/to/pdf'
-    if ext in ['doc', 'docx']:
-        return 'docx/to/pdf'
-    if ext in ['ppt', 'pptx']:
-        return 'pptx/to/pdf'
-    return None
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    return render_template("index.html")
 
 @app.route('/convert', methods=['POST'])
 def convert_files():
-    files = request.files.getlist('files')
-    if not files:
-        return jsonify({'error': 'Hech qanday fayl tanlanmagan'}), 400
+    uploaded_files = request.files.getlist("files")
+    temp_dir = "temp"
+    os.makedirs(temp_dir, exist_ok=True)
 
-    pdf_urls = []
+    file_paths = []
+    for file in uploaded_files:
+        path = os.path.join(temp_dir, f"{uuid.uuid4()}_{file.filename}")
+        file.save(path)
+        file_paths.append(path)
 
-    for file in files:
-        endpoint = get_convert_endpoint(file.filename)
-        if not endpoint:
-            return jsonify({'error': f"Qo‘llab-quvvatlanmaydigan format: {file.filename}"}), 400
+    result = convertapi.convert('pdf', {'Files': file_paths})
+    output_file = os.path.join(temp_dir, f"{uuid.uuid4()}_merged.pdf")
+    result.file.save(output_file)
 
-        res = requests.post(
-            f'https://v2.convertapi.com/convert/{endpoint}?Secret={SECRET}',
-            files={'file': (file.filename, file.stream)}
-        )
-        data = res.json()
-        if 'Files' in data and data['Files']:
-            pdf_urls.append(data['Files'][0]['Url'])
-        else:
-            return jsonify({'error': f'Xatolik: {file.filename}'}), 500
+    return send_file(output_file, as_attachment=True)
 
-    # Birlashtirish
-    merge_data = {'Files': pdf_urls}
-    res = requests.post(
-        f'https://v2.convertapi.com/convert/merge/pdf?Secret={SECRET}',
-        json=merge_data
-    )
-    merge_result = res.json()
-
-    if 'Files' in merge_result and merge_result['Files']:
-        final_url = merge_result['Files'][0]['Url']
-        return jsonify({'pdf': final_url})
-    else:
-        return j
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=10000)
