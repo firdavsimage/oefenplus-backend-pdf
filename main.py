@@ -1,11 +1,8 @@
+import os
+import requests
 from flask import Flask, request, send_file, jsonify
 from flask_cors import CORS
-from ilovepdf import ILovePdf
-import os
-import tempfile
-# from dotenv import load_dotenv
-
-# load_dotenv()
+from tempfile import NamedTemporaryFile
 
 app = Flask(__name__)
 CORS(app)
@@ -16,35 +13,47 @@ ILOVEPDF_SECRET = "secret_key_585ab4d86b672f4a7cf317577eeed234_o1iAu2ae4130c0fae
 def convert_files():
     files = request.files.getlist("files")
     if not files:
-        return jsonify({"error": "Fayl yuborilmadi."}), 400
+        return jsonify({"error": "No files uploaded"}), 400
 
-    try:
-        ilovepdf = ILovePdf(ILOVEPDF_SECRET, verify_ssl=True)
+    # 1. Yangi task yaratamiz
+    task = requests.post(
+        "https://api.ilovepdf.com/v1/start/all",
+        json={"public_key": ILOVEPDF_SECRET}
+    ).json()
+    server = task["server"]
+    task_id = task["task"]
 
-        ext = os.path.splitext(files[0].filename)[1].lower()
-        if ext in [".jpg", ".jpeg", ".png"]:
-            task = ilovepdf.new_task("imagepdf")
-        else:
-            task = ilovepdf.new_task("officepdf")
+    # 2. Har bir faylni upload qilamiz
+    for file in files:
+        file_upload = requests.post(
+            f"https://{server}/v1/upload",
+            files={"file": (file.filename, file.stream)},
+            data={"task": task_id}
+        ).json()
+    
+    # 3. Fayllarni PDF qilib birlashtiramiz
+    process = requests.post(
+        f"https://{server}/v1/process",
+        json={
+            "task": task_id,
+            "tool": "all",
+            "output_filename": "converted.pdf"
+        }
+    ).json()
 
-        temp_files = []
-        for f in files:
-            ext = os.path.splitext(f.filename)[1]
-            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=ext)
-            f.save(tmp.name)
-            task.add_file(tmp.name)
-            temp_files.append(tmp.name)
+    # 4. Tayyor faylni yuklab olamiz
+    result = requests.get(
+        f"https://{server}/v1/download/{task_id}",
+        stream=True
+    )
 
-        task.process()
+    # 5. Mahalliyga vaqtincha saqlaymiz
+    temp_file = NamedTemporaryFile(delete=False, suffix=".pdf")
+    for chunk in result.iter_content(chunk_size=8192):
+        temp_file.write(chunk)
+    temp_file.close()
 
-        result = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
-        task.download(result.name)
+    return send_file(temp_file.name, as_attachment=True, download_name="converted.pdf")
 
-        for f in temp_files:
-            os.remove(f)
-
-        return send_file(result.name, as_attachment=True, download_name="output.pdf")
-
-    except Exception as e:
-        print("Xatolik:", str(e))
-        return jsonify({"error": str(e)}), 500
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
