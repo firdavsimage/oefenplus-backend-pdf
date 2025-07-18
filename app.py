@@ -1,49 +1,52 @@
-from flask import Flask, request, jsonify, send_from_directory
-from flask_cors import CORS
 import os
-import uuid
-import shutil
-from file_to_pdf import convert_files
+import tempfile
+from flask import Flask, request, jsonify
+from pylovepdf import ILovePdf
 
 app = Flask(__name__)
-CORS(app)
 
-UPLOAD_FOLDER = 'uploads'
-OUTPUT_FOLDER = 'converted'
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-os.makedirs(OUTPUT_FOLDER, exist_ok=True)
+# API kalitlari
+PUBLIC_KEY = 'project_public_002668c65677139b50439696e90805e5_JO_Lt06e53e5275b342ceea0429acfc79f0d2'
+SECRET_KEY = 'secret_key_cb327f74110b4e506fec5ac629878293_SkxGg3f96e8bcdd9594d8e575c15d3dab7b99'
 
 @app.route('/api/convert', methods=['POST'])
-def convert():
+def convert_file():
     if 'file' not in request.files:
-        return jsonify({'error': 'Fayl yuborilmadi'}), 400
+        return jsonify({'error': 'Fayl topilmadi'}), 400
 
-    files = request.files.getlist('file')
-    saved_paths = []
+    uploaded_file = request.files['file']
+    if uploaded_file.filename == '':
+        return jsonify({'error': 'Fayl tanlanmadi'}), 400
 
-    for file in files:
-        file_id = uuid.uuid4().hex
-        file_path = os.path.join(UPLOAD_FOLDER, f"{file_id}_{file.filename}")
-        file.save(file_path)
-        saved_paths.append(file_path)
+    # Faylni vaqtincha saqlash
+    temp_dir = tempfile.mkdtemp()
+    file_path = os.path.join(temp_dir, uploaded_file.filename)
+    uploaded_file.save(file_path)
 
-    output_filename = f"{uuid.uuid4().hex}.pdf"
-    output_path = os.path.join(OUTPUT_FOLDER, output_filename)
+    try:
+        ilovepdf = ILovePdf(PUBLIC_KEY, verify_ssl=True)
+        task = ilovepdf.new_task('officepdf')  # Word, PPT, Excel uchun mos
 
-    success = convert_files(saved_paths, output_path)
+        task.add_file(file_path)
+        task.set_output_folder(temp_dir)
+        task.execute()
+        task.download()
 
-    # Keshni tozalash
-    for path in saved_paths:
-        os.remove(path)
+        # Topilgan yagona PDF fayl
+        pdf_file = next((f for f in os.listdir(temp_dir) if f.endswith('.pdf')), None)
+        if pdf_file:
+            return jsonify({'download_url': f'/download/{pdf_file}'})
+        else:
+            return jsonify({'error': 'PDF yaratib bo‘lmadi'}), 500
 
-    if success:
-        return jsonify({'downloadUrl': f'/download/{output_filename}'})
-    else:
-        return jsonify({'error': 'Konvertatsiya qilishda xatolik'}), 500
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/download/<filename>')
 def download_file(filename):
-    return send_from_directory(OUTPUT_FOLDER, filename, as_attachment=True)
+    from flask import send_from_directory
+    temp_dir = tempfile.gettempdir()
+    return send_from_directory(temp_dir, filename, as_attachment=True)
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=10000)
+    app.run(debug=True)
