@@ -15,7 +15,6 @@ def convert_files():
         if not files:
             return jsonify({"error": "No files uploaded"}), 400
 
-        # 1. IlovePDF task yaratish
         task_response = requests.post(
             "https://api.ilovepdf.com/v1/start/all",
             json={"public_key": ILOVEPDF_SECRET}
@@ -26,7 +25,6 @@ def convert_files():
         server = task["server"]
         task_id = task["task"]
 
-        # 2. Fayllarni yuklash
         for file in files:
             upload_response = requests.post(
                 f"https://{server}/v1/upload",
@@ -35,7 +33,6 @@ def convert_files():
             )
             print(f"UPLOAD RESPONSE for {file.filename}:", upload_response.text)
 
-        # 3. Konvertatsiya qilish
         process_response = requests.post(
             f"https://{server}/v1/process",
             json={
@@ -46,7 +43,6 @@ def convert_files():
         )
         print("PROCESS RESPONSE:", process_response.text)
 
-        # 4. Tayyor PDF linkni yuborish
         download_url = f"https://{server}/v1/download/{task_id}"
         return jsonify({"url": download_url})
 
