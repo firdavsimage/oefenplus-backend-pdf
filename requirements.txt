@@ -1,6 +1,5 @@
 Flask
+flask-cors
 requests
-flask_cors
-python-dotenv
 gunicorn
-ilovepdf-python
+python-dotenv
