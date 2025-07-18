@@ -5,6 +5,7 @@ import os
 import uuid
 
 app = Flask(__name__)
+CORS(app, origins=["https://oefenplus.uz"])
 
 # Konfiguratsiya
 ILOVEPDF_PUBLIC_KEY = "project_public_002668c65677139b50439696e90805e5_JO_Lt06e53e5275b342ceea0429acfc79f0d2"
