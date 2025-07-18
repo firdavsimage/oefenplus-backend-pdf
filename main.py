@@ -1,136 +1,119 @@
-from flask import Flask, request, send_file, jsonify
-from werkzeug.utils import secure_filename
-import os
-import hashlib
-import uuid
-import requests
-from flask_cors import CORS  # ✅ CORS import qilindi
-
-app = Flask(__name__)
-CORS(app, origins=["https://oefenplus.uz"])  # ✅ Faqat shu frontend domeniga ruxsat berildi
-
-UPLOAD_FOLDER = "uploads"
-CACHE_FOLDER = "cache"
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-os.makedirs(CACHE_FOLDER, exist_ok=True)
-
-ILOVEPDF_SECRET = "secret_key_585ab4d86b672f4a7cf317577eeed234_o1iAu2ae4130c0faea3f83fb367acc19c247d"
-
-def file_hash(filepath):
-    with open(filepath, "rb") as f:
-        return hashlib.md5(f.read()).hexdigest()
-
 @app.route("/convert", methods=["POST"])
 def convert_to_pdf():
-    # ✅ 1. Ko‘p rasmni tekshirish
-    if 'files' in request.files:
-        files = request.files.getlist("files")
-        valid_images = []
-        hash_input = b""
-        for file in files:
-            filename = secure_filename(file.filename)
-            ext = filename.rsplit('.', 1)[-1].lower()
-            if ext in ['jpg', 'jpeg', 'png']:
-                uid = uuid.uuid4().hex
-                filepath = os.path.join(UPLOAD_FOLDER, f"{uid}_{filename}")
-                file.save(filepath)
-                valid_images.append(filepath)
-                hash_input += open(filepath, "rb").read()
+    try:
+        if 'files' in request.files:
+            files = request.files.getlist("files")
+            valid_images = []
+            hash_input = b""
 
-        if not valid_images:
-            return jsonify({"error": "Rasmlar topilmadi yoki format noto‘g‘ri"}), 400
+            for file in files:
+                filename = secure_filename(file.filename)
+                ext = filename.rsplit('.', 1)[-1].lower()
+                if ext in ['jpg', 'jpeg', 'png']:
+                    uid = uuid.uuid4().hex
+                    filepath = os.path.join(UPLOAD_FOLDER, f"{uid}_{filename}")
+                    file.save(filepath)
+                    valid_images.append(filepath)
+                    hash_input += open(filepath, "rb").read()
 
-        hashname = hashlib.md5(hash_input).hexdigest()
-        cached_pdf = os.path.join(CACHE_FOLDER, f"{hashname}.pdf")
-        if os.path.exists(cached_pdf):
-            return send_file(cached_pdf, as_attachment=True)
+            if not valid_images:
+                return jsonify({"error": "Rasmlar topilmadi yoki noto‘g‘ri format"}), 400
 
-        try:
-            # Task yaratish
+            hashname = hashlib.md5(hash_input).hexdigest()
+            cached_pdf = os.path.join(CACHE_FOLDER, f"{hashname}.pdf")
+            if os.path.exists(cached_pdf):
+                return send_file(cached_pdf, as_attachment=True)
+
+            # ILovePDF task yaratish
             res = requests.post("https://api.ilovepdf.com/v1/start/imagepdf", json={
                 "public_key": ILOVEPDF_SECRET
             })
-            task = res.json()
-            server = task["server"]
-            task_id = task["task"]
+            if res.status_code != 200:
+                return jsonify({"error": "iLovePDF task yaratib bo‘lmadi"}), 500
 
-            # Barcha rasm fayllarini yuklash
+            task = res.json()
+            server, task_id = task["server"], task["task"]
+
+            # Fayllarni yuklash
             for path in valid_images:
                 with open(path, "rb") as f:
-                    requests.post(f"https://{server}/v1/upload", files={
+                    upload_res = requests.post(f"https://{server}/v1/upload", files={
                         'file': (os.path.basename(path), f)
-                    }, data={
-                        'task': task_id
-                    })
+                    }, data={'task': task_id})
+                    if upload_res.status_code != 200:
+                        return jsonify({"error": "Yuklashda xatolik"}), 500
 
             # Konvertatsiya qilish
-            requests.post(f"https://{server}/v1/process", data={
-                "task": task_id
-            })
+            proc_res = requests.post(f"https://{server}/v1/process", data={"task": task_id})
+            if proc_res.status_code != 200:
+                return jsonify({"error": "Konvertatsiya xatoligi"}), 500
 
             # Yuklab olish
             output = requests.get(f"https://{server}/v1/download/{task_id}", stream=True)
+            if output.status_code != 200:
+                return jsonify({"error": "Yuklab olish xatoligi"}), 500
+
             with open(cached_pdf, 'wb') as f:
-                for chunk in output.iter_content(chunk_size=1024):
+                for chunk in output.iter_content(1024):
                     if chunk:
                         f.write(chunk)
 
             return send_file(cached_pdf, as_attachment=True)
 
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
+        # Bitta fayl
+        if 'file' not in request.files:
+            return jsonify({"error": "Fayl yuborilmadi"}), 400
 
-    # ✅ 2. Bitta fayl (oldingi kod) — o‘zgartirilmagan
-    if 'file' not in request.files:
-        return jsonify({"error": "Fayl yuborilmadi"}), 400
+        file = request.files['file']
+        filename = secure_filename(file.filename)
+        ext = filename.rsplit('.', 1)[-1].lower()
 
-    file = request.files['file']
-    filename = secure_filename(file.filename)
-    ext = filename.rsplit('.', 1)[-1].lower()
+        if ext not in ['jpg', 'jpeg', 'png', 'docx', 'pptx']:
+            return jsonify({"error": "Yaroqsiz fayl turi"}), 400
 
-    if ext not in ['jpg', 'jpeg', 'png', 'docx', 'pptx']:
-        return jsonify({"error": "Yaroqsiz fayl turi"}), 400
+        uid = uuid.uuid4().hex
+        filepath = os.path.join(UPLOAD_FOLDER, f"{uid}_{filename}")
+        file.save(filepath)
 
-    uid = uuid.uuid4().hex
-    filepath = os.path.join(UPLOAD_FOLDER, f"{uid}_{filename}")
-    file.save(filepath)
+        hashname = file_hash(filepath)
+        cached_pdf = os.path.join(CACHE_FOLDER, f"{hashname}.pdf")
+        if os.path.exists(cached_pdf):
+            return send_file(cached_pdf, as_attachment=True)
 
-    hashname = file_hash(filepath)
-    cached_pdf = os.path.join(CACHE_FOLDER, f"{hashname}.pdf")
-    if os.path.exists(cached_pdf):
-        return send_file(cached_pdf, as_attachment=True)
-
-    # API: iLovePDF
-    try:
+        # ILovePDF task yaratish
         res = requests.post("https://api.ilovepdf.com/v1/start/convert", json={
             "public_key": ILOVEPDF_SECRET,
             "task": "officepdf" if ext in ["docx", "pptx"] else "imagepdf"
         })
+        if res.status_code != 200:
+            return jsonify({"error": "iLovePDF task yaratilmadi"}), 500
+
         task = res.json()
-        server = task["server"]
-        task_id = task["task"]
+        server, task_id = task["server"], task["task"]
 
         with open(filepath, "rb") as f:
-            requests.post(f"https://{server}/v1/upload", files={
+            upload_res = requests.post(f"https://{server}/v1/upload", files={
                 'file': (filename, f)
-            }, data={
-                'task': task_id
-            })
+            }, data={'task': task_id})
+            if upload_res.status_code != 200:
+                return jsonify({"error": "Yuklashda xatolik"}), 500
 
-        requests.post(f"https://{server}/v1/process", data={
-            "task": task_id
-        })
+        proc_res = requests.post(f"https://{server}/v1/process", data={"task": task_id})
+        if proc_res.status_code != 200:
+            return jsonify({"error": "Konvertatsiya xatoligi"}), 500
 
         output = requests.get(f"https://{server}/v1/download/{task_id}", stream=True)
+        if output.status_code != 200:
+            return jsonify({"error": "Yuklab olish xatoligi"}), 500
+
         with open(cached_pdf, 'wb') as f:
-            for chunk in output.iter_content(chunk_size=1024):
+            for chunk in output.iter_content(1024):
                 if chunk:
                     f.write(chunk)
 
         return send_file(cached_pdf, as_attachment=True)
 
     except Exception as e:
+        import traceback
+        print(traceback.format_exc())
         return jsonify({"error": str(e)}), 500
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
