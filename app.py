@@ -1,73 +1,72 @@
-from flask import Flask, request, jsonify, send_from_directory
-from werkzeug.utils import secure_filename
-from flask_cors import CORS
-from pylovepdf.ilovepdf import ILovePdf
 import os
-import uuid
-import shutil
+from flask import Flask, request, jsonify, send_file
+from flask_cors import CORS
+from ilovepdf import ILovePdf
 
 app = Flask(__name__)
-CORS(app, origins=["https://oefenplus.uz"])
+CORS(app)
 
-# API kalitlari va papkalar
-ILOVEPDF_PUBLIC_KEY = "project_public_002668c65677139b50439696e90805e5_JO_Lt06e53e5275b342ceea0429acfc79f0d2"
-UPLOAD_FOLDER = "uploads"
-RESULT_FOLDER = "output"
+# API kalitlaringiz
+PUBLIC_KEY = "project_public_002668c65677139b50439696e90805e5_JO_Lt06e53e5275b342ceea0429acfc79f0d2"
+SECRET_KEY = "secret_key_cb327f74110b4e506fec5ac629878293_SkxGg3f96e8bcdd9594d8e575c15d3dab7b99"
 
+UPLOAD_FOLDER = 'uploads'
+OUTPUT_FOLDER = 'output'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-os.makedirs(RESULT_FOLDER, exist_ok=True)
+os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
-@app.route('/api/convert', methods=['POST'])
+ilovepdf = ILovePdf(PUBLIC_KEY, SECRET_KEY, verify_ssl=True)
+
+@app.route('/convert', methods=['POST'])
 def convert_to_pdf():
-    files = request.files.getlist("files")
+    files = request.files.getlist('files')
     if not files:
-        return jsonify({"error": "Hech qanday fayl yuborilmadi."}), 400
+        return jsonify({'error': 'Fayl yuborilmadi'}), 400
 
-    # Task ID bilan har bir foydalanuvchi uchun alohida katalog yaratamiz
-    task_id = str(uuid.uuid4())
-    user_folder = os.path.join(UPLOAD_FOLDER, task_id)
-    os.makedirs(user_folder, exist_ok=True)
+    task = None
+    merged_file_path = os.path.join(OUTPUT_FOLDER, 'output.pdf')
+
+    # Fayl turlarini aniqlaymiz
+    file_exts = [os.path.splitext(f.filename)[1].lower() for f in files]
 
     try:
-        ilovepdf = ILovePdf(ILOVEPDF_PUBLIC_KEY, verify_ssl=True)
-        task = ilovepdf.new_task('officepdf')
+        if all(ext in ['.jpg', '.jpeg', '.png'] for ext in file_exts):
+            task = ilovepdf.new_task('imagepdf')
+        elif all(ext in ['.docx', '.doc', '.pptx', '.ppt', '.xlsx', '.xls'] for ext in file_exts):
+            task = ilovepdf.new_task('officepdf')
+        else:
+            return jsonify({'error': 'Faqat rasmlar yoki Office fayllar yuborilishi mumkin'}), 400
 
         for file in files:
-            filename = secure_filename(file.filename)
-            filepath = os.path.join(user_folder, filename)
+            filepath = os.path.join(UPLOAD_FOLDER, file.filename)
             file.save(filepath)
             task.add_file(filepath)
 
-        task.set_output_folder(RESULT_FOLDER)
+        task.set_output_folder(OUTPUT_FOLDER)
         task.execute()
         task.download()
-        task.delete_current_task()
 
-        # PDF yoki ZIP natijani topish
-        result_file = None
-        for f in os.listdir(RESULT_FOLDER):
-            if f.endswith('.pdf') or f.endswith('.zip'):
-                result_file = f
+        # Topilgan birinchi PDF faylni qaytarish
+        for f in os.listdir(OUTPUT_FOLDER):
+            if f.endswith('.pdf'):
+                merged_file_path = os.path.join(OUTPUT_FOLDER, f)
                 break
 
-        if not result_file:
-            return jsonify({"error": "PDF fayl topilmadi"}), 500
-
-        return jsonify({
-            "download_url": f"/download/{result_file}"
-        })
+        return send_file(merged_file_path, as_attachment=True)
 
     except Exception as e:
-        print("Xatolik:", e)
-        return jsonify({"error": "Konvertatsiya xatoligi: " + str(e)}), 500
-
+        return jsonify({'error': str(e)}), 500
     finally:
-        # Kiritilgan fayllarni tozalaymiz
-        shutil.rmtree(user_folder, ignore_errors=True)
+        # Kesh tozalash
+        for f in os.listdir(UPLOAD_FOLDER):
+            os.remove(os.path.join(UPLOAD_FOLDER, f))
+        for f in os.listdir(OUTPUT_FOLDER):
+            os.remove(os.path.join(OUTPUT_FOLDER, f))
 
-@app.route('/download/<filename>', methods=['GET'])
-def download_file(filename):
-    return send_from_directory(RESULT_FOLDER, filename, as_attachment=True)
+
+@app.route('/')
+def index():
+    return 'ILovePDF API Flask Backend is running!'
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(host='0.0.0.0', port=10000)
