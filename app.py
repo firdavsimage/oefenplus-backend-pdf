@@ -2,10 +2,12 @@ from flask import Flask, request, send_file, render_template
 import convertapi
 import os
 import uuid
-
-convertapi.api_secret = 'secret_key_585ab4d86b672f4a7cf317577eeed234_o1iAu2ae4130c0faea3f83fb367acc19c247d'
+import shutil
 
 app = Flask(__name__)
+
+# ConvertAPI secret key (ConvertAPI bilan ishlaydi)
+convertapi.api_secret = 'your_actual_convertapi_secret_key'
 
 @app.route('/')
 def index():
@@ -14,20 +16,31 @@ def index():
 @app.route('/convert', methods=['POST'])
 def convert_files():
     uploaded_files = request.files.getlist("files")
-    temp_dir = "temp"
+    temp_dir = os.path.join("temp", str(uuid.uuid4()))
     os.makedirs(temp_dir, exist_ok=True)
 
-    file_paths = []
+    # Save uploaded files
+    input_paths = []
     for file in uploaded_files:
-        path = os.path.join(temp_dir, f"{uuid.uuid4()}_{file.filename}")
-        file.save(path)
-        file_paths.append(path)
+        filepath = os.path.join(temp_dir, file.filename)
+        file.save(filepath)
+        input_paths.append(filepath)
 
-    result = convertapi.convert('pdf', {'Files': file_paths})
-    output_file = os.path.join(temp_dir, f"{uuid.uuid4()}_merged.pdf")
-    result.file.save(output_file)
+    try:
+        # Convert to PDF
+        result = convertapi.convert('pdf', {
+            'Files': input_paths
+        })
 
-    return send_file(output_file, as_attachment=True)
+        output_file = os.path.join(temp_dir, 'converted.pdf')
+        result.file.save(output_file)
+
+        return send_file(output_file, as_attachment=True)
+
+    finally:
+        # Clean up all temp files after response is sent
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=10000)
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
