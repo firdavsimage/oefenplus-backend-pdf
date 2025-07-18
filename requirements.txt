@@ -1,4 +1,4 @@
-Flask
-flask-cors
+Flask==2.3.3
+requests==2.31.0
 ilovepdf
-gunicorn app:app --bind 0.0.0.0:$PORT
+gunicorn
