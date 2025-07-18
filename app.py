@@ -6,7 +6,6 @@ from ilovepdf import ILovePdf
 app = Flask(__name__)
 CORS(app)
 
-# API kalitlaringiz
 PUBLIC_KEY = "project_public_002668c65677139b50439696e90805e5_JO_Lt06e53e5275b342ceea0429acfc79f0d2"
 SECRET_KEY = "secret_key_cb327f74110b4e506fec5ac629878293_SkxGg3f96e8bcdd9594d8e575c15d3dab7b99"
 
@@ -25,8 +24,6 @@ def convert_to_pdf():
 
     task = None
     merged_file_path = os.path.join(OUTPUT_FOLDER, 'output.pdf')
-
-    # Fayl turlarini aniqlaymiz
     file_exts = [os.path.splitext(f.filename)[1].lower() for f in files]
 
     try:
@@ -46,7 +43,6 @@ def convert_to_pdf():
         task.execute()
         task.download()
 
-        # Topilgan birinchi PDF faylni qaytarish
         for f in os.listdir(OUTPUT_FOLDER):
             if f.endswith('.pdf'):
                 merged_file_path = os.path.join(OUTPUT_FOLDER, f)
@@ -57,16 +53,11 @@ def convert_to_pdf():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
     finally:
-        # Kesh tozalash
         for f in os.listdir(UPLOAD_FOLDER):
             os.remove(os.path.join(UPLOAD_FOLDER, f))
         for f in os.listdir(OUTPUT_FOLDER):
             os.remove(os.path.join(OUTPUT_FOLDER, f))
 
-
 @app.route('/')
 def index():
-    return 'ILovePDF API Flask Backend is running!'
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=10000)
+    return '✅ ILovePDF API Flask Backend is running!'
