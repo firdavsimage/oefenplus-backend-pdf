@@ -5,6 +5,7 @@ import os
 from werkzeug.utils import secure_filename
 import subprocess
 import zipfile
+import hashlib
 
 app = Flask(__name__)
 UPLOAD_FOLDER = 'uploads'
@@ -40,14 +41,11 @@ def images_to_pdf(images, output_path):
         # Sahifa o'lchamiga moslashtirish
         page_w = pdf.w - 20
         page_h = pdf.h - 20
-        ratio = min(page_w/width, page_h/page_h)
+        ratio = min(page_w/width, page_h/height)
         new_w = int(width*ratio)
         new_h = int(height*ratio)
         pdf.image(img, x=10, y=10, w=new_w, h=new_h)
     pdf.output(output_path)
-
-
-import hashlib
 
 def get_file_hash(file_path):
     """Fayl hashini olish (unikal identifikator uchun)."""
@@ -63,7 +61,6 @@ def check_cached_pdf(input_path, out_dir):
     if os.path.exists(cached_pdf):
         return cached_pdf
     return None
-
 
 def libreoffice_convert(input_path, output_dir):
     cmd = [
@@ -101,54 +98,39 @@ def convert_files():
         images_to_pdf(image_paths, img_pdf)
         pdf_files.append(img_pdf)
 
-    import hashlib
+    # PPT -> PDF (avto kesh)
+    ppt_file = request.files.get('ppt')
+    if ppt_file and ppt_file.filename:
+        pptx_filename = secure_filename(ppt_file.filename)
+        pptx_path = os.path.join(app.config['UPLOAD_FOLDER'], pptx_filename)
+        ppt_file.save(pptx_path)
+        cached_pdf = check_cached_pdf(pptx_path, app.config['UPLOAD_FOLDER'])
+        if cached_pdf:
+            pdf_files.append(cached_pdf)
+        else:
+            ppt_pdf = libreoffice_convert(pptx_path, app.config['UPLOAD_FOLDER'])
+            file_hash = get_file_hash(pptx_path)
+            cached_pdf = os.path.join(app.config['UPLOAD_FOLDER'], f"{file_hash}.pdf")
+            os.rename(ppt_pdf, cached_pdf)
+            pdf_files.append(cached_pdf)
 
-def get_file_hash(file_path):
-    h = hashlib.md5()
-    with open(file_path, 'rb') as f:
-        h.update(f.read())
-    return h.hexdigest()
+    # Word -> PDF (avto kesh)
+    word_file = request.files.get('word')
+    if word_file and word_file.filename:
+        word_filename = secure_filename(word_file.filename)
+        word_path = os.path.join(app.config['UPLOAD_FOLDER'], word_filename)
+        word_file.save(word_path)
+        cached_pdf = check_cached_pdf(word_path, app.config['UPLOAD_FOLDER'])
+        if cached_pdf:
+            pdf_files.append(cached_pdf)
+        else:
+            word_pdf = libreoffice_convert(word_path, app.config['UPLOAD_FOLDER'])
+            file_hash = get_file_hash(word_path)
+            cached_pdf = os.path.join(app.config['UPLOAD_FOLDER'], f"{file_hash}.pdf")
+            os.rename(word_pdf, cached_pdf)
+            pdf_files.append(cached_pdf)
 
-def check_cached_pdf(input_path, out_dir):
-    file_hash = get_file_hash(input_path)
-    cached_pdf = os.path.join(out_dir, f"{file_hash}.pdf")
-    if os.path.exists(cached_pdf):
-        return cached_pdf
-    return None
-
-    
-# PPT -> PDF
-ppt_file = request.files.get('ppt')
-if ppt_file and ppt_file.filename:
-    pptx_filename = secure_filename(ppt_file.filename)
-    pptx_path = os.path.join(app.config['UPLOAD_FOLDER'], pptx_filename)
-    ppt_file.save(pptx_path)
-    cached_pdf = check_cached_pdf(pptx_path, app.config['UPLOAD_FOLDER'])
-    if cached_pdf:
-        pdf_files.append(cached_pdf)
-    else:
-        ppt_pdf = libreoffice_convert(pptx_path, app.config['UPLOAD_FOLDER'])
-        file_hash = get_file_hash(pptx_path)
-        cached_pdf = os.path.join(app.config['UPLOAD_FOLDER'], f"{file_hash}.pdf")
-        os.rename(ppt_pdf, cached_pdf)
-        pdf_files.append(cached_pdf)
-
-# PPT -> PDF
-ppt_file = request.files.get('ppt')
-if ppt_file and ppt_file.filename:
-    pptx_filename = secure_filename(ppt_file.filename)
-    pptx_path = os.path.join(app.config['UPLOAD_FOLDER'], pptx_filename)
-    ppt_file.save(pptx_path)
-    cached_pdf = check_cached_pdf(pptx_path, app.config['UPLOAD_FOLDER'])
-    if cached_pdf:
-        pdf_files.append(cached_pdf)
-    else:
-        ppt_pdf = libreoffice_convert(pptx_path, app.config['UPLOAD_FOLDER'])
-        file_hash = get_file_hash(pptx_path)
-        cached_pdf = os.path.join(app.config['UPLOAD_FOLDER'], f"{file_hash}.pdf")
-        os.rename(ppt_pdf, cached_pdf)
-        pdf_files.append(cached_pdf)
-
+    # Natijani qaytarish
     if len(pdf_files) == 1:
         return send_file(pdf_files[0], as_attachment=True)
     elif len(pdf_files) > 1:
