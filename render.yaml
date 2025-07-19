@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: oefenplus-backend-pdf
+    env: docker
+    region: frankfurt
+    plan: free
+    dockerfilePath: ./Dockerfile
