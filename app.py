@@ -4,6 +4,7 @@ from PIL import Image
 import os
 from werkzeug.utils import secure_filename
 import subprocess
+import zipfile
 
 app = Flask(__name__)
 UPLOAD_FOLDER = 'uploads'
@@ -34,7 +35,6 @@ def images_to_pdf(images, output_path):
     for img in images:
         image = Image.open(img)
         pdf.add_page()
-        # To keep aspect ratio
         width, height = image.size
         w, h = pdf.w - 20, pdf.h - 20
         ratio = min(w/width, h/height)
@@ -56,15 +56,15 @@ def libreoffice_convert(input_path, output_dir):
     )
     return output_pdf
 
-@app.route('/', methods=['GET'])
+@app.route("/", methods=["GET"])
 def index():
     return render_template_string(HTML)
 
-@app.route('/convert', methods=['POST'])
+@app.route("/convert", methods=["POST"])
 def convert_files():
     pdf_files = []
 
-    # Images -> PDF
+    # Images
     images = request.files.getlist('images')
     image_paths = []
     for img in images:
@@ -78,7 +78,7 @@ def convert_files():
         images_to_pdf(image_paths, img_pdf)
         pdf_files.append(img_pdf)
 
-    # PPT -> PDF
+    # PPTX
     ppt_file = request.files.get('ppt')
     if ppt_file and ppt_file.filename:
         pptx_filename = secure_filename(ppt_file.filename)
@@ -87,7 +87,7 @@ def convert_files():
         ppt_pdf = libreoffice_convert(pptx_path, app.config['UPLOAD_FOLDER'])
         pdf_files.append(ppt_pdf)
 
-    # Word -> PDF
+    # DOCX
     word_file = request.files.get('word')
     if word_file and word_file.filename:
         word_filename = secure_filename(word_file.filename)
@@ -96,11 +96,9 @@ def convert_files():
         word_pdf = libreoffice_convert(word_path, app.config['UPLOAD_FOLDER'])
         pdf_files.append(word_pdf)
 
-    # If multiple PDFs, zip them
     if len(pdf_files) == 1:
         return send_file(pdf_files[0], as_attachment=True)
     elif len(pdf_files) > 1:
-        import zipfile
         zip_path = os.path.join(app.config['UPLOAD_FOLDER'], 'converted_files.zip')
         with zipfile.ZipFile(zip_path, 'w') as zipf:
             for pdf in pdf_files:
@@ -108,16 +106,6 @@ def convert_files():
         return send_file(zip_path, as_attachment=True)
     else:
         return "No files uploaded or converted.", 400
-
-
-from flask import Flask
-import subprocess
-
-app = Flask(__name__)
-
-@app.route("/")
-def index():
-    return "PDF Konvertor xizmati ishga tushdi!"
 
 @app.route("/soffice-check")
 def soffice_check():
