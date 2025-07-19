@@ -1,10 +1,9 @@
 from flask import Flask, request, send_file, render_template_string
 from fpdf import FPDF
 from PIL import Image
-from docx import Document
-from docx2pdf import convert
 import os
 from werkzeug.utils import secure_filename
+import subprocess
 
 app = Flask(__name__)
 UPLOAD_FOLDER = 'uploads'
@@ -35,8 +34,27 @@ def images_to_pdf(images, output_path):
     for img in images:
         image = Image.open(img)
         pdf.add_page()
-        pdf.image(img, x=10, y=10, w=pdf.w - 20)
+        # To keep aspect ratio
+        width, height = image.size
+        w, h = pdf.w - 20, pdf.h - 20
+        ratio = min(w/width, h/height)
+        new_w, new_h = int(width*ratio), int(height*ratio)
+        pdf.image(img, x=10, y=10, w=new_w, h=new_h)
     pdf.output(output_path)
+
+def libreoffice_convert(input_path, output_dir):
+    cmd = [
+        "soffice",
+        "--headless",
+        "--convert-to", "pdf",
+        "--outdir", output_dir,
+        input_path
+    ]
+    subprocess.run(cmd, check=True)
+    output_pdf = os.path.join(
+        output_dir, os.path.splitext(os.path.basename(input_path))[0] + ".pdf"
+    )
+    return output_pdf
 
 @app.route('/', methods=['GET'])
 def index():
@@ -45,59 +63,51 @@ def index():
 @app.route('/convert', methods=['POST'])
 def convert_files():
     pdf_files = []
+
     # Images -> PDF
     images = request.files.getlist('images')
     image_paths = []
     for img in images:
-        filename = secure_filename(img.filename)
-        img_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        img.save(img_path)
-        image_paths.append(img_path)
+        if img.filename:
+            filename = secure_filename(img.filename)
+            img_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            img.save(img_path)
+            image_paths.append(img_path)
     if image_paths:
         img_pdf = os.path.join(app.config['UPLOAD_FOLDER'], 'images.pdf')
         images_to_pdf(image_paths, img_pdf)
         pdf_files.append(img_pdf)
 
-    # PPT -> PDF (first, convert to pptx images, then images to pdf)
+    # PPT -> PDF
     ppt_file = request.files.get('ppt')
-    if ppt_file:
+    if ppt_file and ppt_file.filename:
         pptx_filename = secure_filename(ppt_file.filename)
         pptx_path = os.path.join(app.config['UPLOAD_FOLDER'], pptx_filename)
         ppt_file.save(pptx_path)
-        # Render pptx slides as images
-        from pptx import Presentation
-        ppt = Presentation(pptx_path)
-        slide_imgs = []
-        for i, slide in enumerate(ppt.slides):
-            img_path = os.path.join(app.config['UPLOAD_FOLDER'], f'slide_{i + 1}.png')
-            slide_imgs.append(img_path)
-            # Save blank image (for demo), you can use python-pptx-to-image libraries for real rendering
-            img = Image.new('RGB', (1280, 720), color='white')
-            img.save(img_path)
-        ppt_pdf = os.path.join(app.config['UPLOAD_FOLDER'], 'ppt.pdf')
-        images_to_pdf(slide_imgs, ppt_pdf)
+        ppt_pdf = libreoffice_convert(pptx_path, app.config['UPLOAD_FOLDER'])
         pdf_files.append(ppt_pdf)
 
     # Word -> PDF
     word_file = request.files.get('word')
-    if word_file:
+    if word_file and word_file.filename:
         word_filename = secure_filename(word_file.filename)
         word_path = os.path.join(app.config['UPLOAD_FOLDER'], word_filename)
         word_file.save(word_path)
-        word_pdf = os.path.join(app.config['UPLOAD_FOLDER'], 'word.pdf')
-        convert(word_path, word_pdf)
+        word_pdf = libreoffice_convert(word_path, app.config['UPLOAD_FOLDER'])
         pdf_files.append(word_pdf)
 
     # If multiple PDFs, zip them
     if len(pdf_files) == 1:
         return send_file(pdf_files[0], as_attachment=True)
-    else:
+    elif len(pdf_files) > 1:
         import zipfile
         zip_path = os.path.join(app.config['UPLOAD_FOLDER'], 'converted_files.zip')
         with zipfile.ZipFile(zip_path, 'w') as zipf:
             for pdf in pdf_files:
                 zipf.write(pdf, os.path.basename(pdf))
         return send_file(zip_path, as_attachment=True)
+    else:
+        return "No files uploaded or converted.", 400
 
 if __name__ == '__main__':
     app.run(debug=True)
