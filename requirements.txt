@@ -3,3 +3,4 @@ python-pptx
 Pillow
 fpdf
 python-docx
+gunicorn
