@@ -109,5 +109,29 @@ def convert_files():
     else:
         return "No files uploaded or converted.", 400
 
+
+from flask import Flask
+import subprocess
+
+app = Flask(__name__)
+
+@app.route("/")
+def index():
+    return "PDF Konvertor xizmati ishga tushdi!"
+
+@app.route("/soffice-check")
+def soffice_check():
+    try:
+        result = subprocess.run(
+            ["soffice", "--version"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+        output = result.stdout or result.stderr
+        return f"<pre>{output}</pre>"
+    except FileNotFoundError:
+        return "❌ soffice (LibreOffice) o‘rnatilmagan"
+
 if __name__ == '__main__':
     app.run(debug=True)
