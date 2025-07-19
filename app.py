@@ -11,6 +11,11 @@ from flask_cors import CORS  # ⬅️ YANGI
 app = Flask(__name__)
 CORS(app)  # ⬅️ CORS ni shu yerga qo‘shamiz
 
+@app.route('/ping', methods=['GET'])
+def ping():
+    return "pong", 200
+
+
 UPLOAD_FOLDER = 'uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
