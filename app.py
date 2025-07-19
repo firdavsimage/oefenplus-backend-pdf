@@ -38,24 +38,21 @@ def images_to_pdf(images, output_path):
         width, height = image.size
         orientation = 'L' if width > height else 'P'
         pdf.add_page(orientation=orientation)
-        # Sahifa o'lchamiga moslashtirish
         page_w = pdf.w - 20
         page_h = pdf.h - 20
-        ratio = min(page_w/width, page_h/height)
-        new_w = int(width*ratio)
-        new_h = int(height*ratio)
+        ratio = min(page_w / width, page_h / height)
+        new_w = int(width * ratio)
+        new_h = int(height * ratio)
         pdf.image(img, x=10, y=10, w=new_w, h=new_h)
     pdf.output(output_path)
 
 def get_file_hash(file_path):
-    """Fayl hashini olish (unikal identifikator uchun)."""
     h = hashlib.md5()
     with open(file_path, 'rb') as f:
         h.update(f.read())
     return h.hexdigest()
 
 def check_cached_pdf(input_path, out_dir):
-    """Oldin konvertatsiya qilingan faylni tekshirish."""
     file_hash = get_file_hash(input_path)
     cached_pdf = os.path.join(out_dir, f"{file_hash}.pdf")
     if os.path.exists(cached_pdf):
@@ -98,7 +95,7 @@ def convert_files():
         images_to_pdf(image_paths, img_pdf)
         pdf_files.append(img_pdf)
 
-    # PPT -> PDF (avto kesh)
+    # PPT
     ppt_file = request.files.get('ppt')
     if ppt_file and ppt_file.filename:
         pptx_filename = secure_filename(ppt_file.filename)
@@ -114,7 +111,7 @@ def convert_files():
             os.rename(ppt_pdf, cached_pdf)
             pdf_files.append(cached_pdf)
 
-    # Word -> PDF (avto kesh)
+    # Word
     word_file = request.files.get('word')
     if word_file and word_file.filename:
         word_filename = secure_filename(word_file.filename)
@@ -130,7 +127,7 @@ def convert_files():
             os.rename(word_pdf, cached_pdf)
             pdf_files.append(cached_pdf)
 
-    # Natijani qaytarish
+    # Return response
     if len(pdf_files) == 1:
         return send_file(pdf_files[0], as_attachment=True)
     elif len(pdf_files) > 1:
